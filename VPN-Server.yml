@@ -1,0 +1,194 @@
+---
+- name: Configuração do VPN-server
+  hosts: vpnserver
+  become: yes
+
+  tasks:
+    - name: Atualiza hostname
+      hostname:
+        name: "vpn-server"
+
+    - name: Atualiza /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: "^127.0.1.1"
+        line: "127.0.1.1 vpn-server"
+        state: present
+
+    - name: Atualiza sistema
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Instala pacotes essenciais
+      apt:
+        name:
+          - tcpdump
+          - wget
+          - lynx
+          - curl
+          - build-essential
+          - libreadline-dev
+          - libssl-dev
+          - libncurses5-dev
+          - ufw
+        state: present
+        update_cache: yes
+
+    - name: Cria banner personalizado
+      copy:
+        dest: /etc/banner.txt
+        content: |
+          ╔════════════════════════════════════════════════════════╗
+          ║                       DOKKU                            ║
+          ╠════════════════════════════════════════════════════════╣
+          ║  Este sistema é propriedade exclusiva da Fabrica       ║
+          ║ ⚠  Acesso restrito: somente usuários autorizados.      ║
+          ╚════════════════════════════════════════════════════════╝
+        mode: '0644'
+
+    - name: Configura SSH para exibir banner
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Banner"
+        line: "Banner /etc/banner.txt"
+        state: present
+        backup: yes
+
+    - name: Configura SSH para permitir somente usuários autorizados
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?AllowUsers"
+        line: "AllowUsers black peraza lopes galves"
+        state: present
+        backup: yes
+
+    - name: Permite acesso SSH apenas por chave pública
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PubkeyAuthentication"
+        line: "PubkeyAuthentication yes"
+        state: present
+        backup: yes
+
+    - name: Proíbe acesso SSH por senha
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+        backup: yes
+
+    - name: Reinicia serviço SSH
+      service:
+        name: ssh
+        state: restarted
+
+    - name: Cria script de login com banner
+      copy:
+        dest: /etc/profile.d/banner.sh
+        content: |
+          #!/bin/bash
+          clear
+          echo -e "\e[1;34m"
+          echo "╔════════════════════════════════════════════════════════╗"
+          echo "║                       DOKKU                            ║"
+          echo "╠════════════════════════════════════════════════════════╣"
+          echo "║  Este sistema é propriedade exclusiva da Fabrica       ║"
+          echo "║ ⚠  Acesso restrito: somente usuários autorizados.      ║"
+          echo "╚════════════════════════════════════════════════════════╝"
+          echo -e "\e[0m"
+          echo ""
+          echo -e "👋 Bem-vindo, \e[1;32m$USER\e[0m!"
+          echo ""
+        mode: '0755'
+
+    - name: Baixa SoftEther
+      get_url:
+        url: "https://www.softether-download.com/files/softether/v4.44-9807-rtm-2025.04.16-tree/Linux/SoftEther_VPN_Server/64bit_-_Intel_x64_or_AMD64/softether-vpnserver-v4.44-9807-rtm-2025.04.16-linux-x64-64bit.tar.gz"
+        dest: /usr/local/softether-vpnserver.tar.gz
+        mode: '0644'
+
+    - name: Extrai SoftEther
+      unarchive:
+        src: /usr/local/softether-vpnserver.tar.gz
+        dest: /usr/local/
+        remote_src: yes
+
+    - name: Compilar SoftEther
+      shell: |
+        cd /usr/local/vpnserver
+        make clean || true
+        make
+      args:
+        chdir: /usr/local/vpnserver
+
+    - name: Ajusta permissões do diretório
+      file:
+        path: /usr/local/vpnserver
+        owner: root
+        group: root
+        recurse: yes
+        mode: "0755"
+
+    - name: Permitir execução dos binários
+      file:
+        path: "/usr/local/vpnserver/{{ item }}"
+        mode: "0700"
+      loop:
+        - vpnserver
+        - vpncmd
+
+    - name: Criar serviço systemd SoftEther
+      copy:
+        dest: /etc/systemd/system/softether-vpnserver.service
+        content: |
+          [Unit]
+          Description=SoftEther VPN Server
+          After=network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/usr/local/vpnserver/vpnserver start
+          ExecStop=/usr/local/vpnserver/vpnserver stop
+          ExecReload=/usr/local/vpnserver/vpnserver restart
+          WorkingDirectory=/usr/local/vpnserver/
+          User=root
+          Group=root
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Reload systemd
+
+    - name:
+      systemd:
+        daemon_reload: yes
+
+    - name: Habilitar e iniciar SoftEther
+      systemd:
+        name: softether-vpnserver
+        enabled: yes
+        state: started
+
+    - name: Abrir portas no firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"
+        - "443"
+        - "5555"
+        - "992"
+        - "1194"
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart vpnserver
+      systemd:
+        name: softether-vpnserver
+        state: restarted
