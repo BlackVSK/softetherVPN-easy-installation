@@ -1,6 +1,7 @@
 ---
 - name: Configuração do VPN-server
-  hosts: vpnserver
+  hosts: localhost
+  connection: local
   become: yes
 
   tasks:
@@ -192,3 +193,4 @@
       systemd:
         name: softether-vpnserver
         state: restarted
+
