@@ -9,6 +9,7 @@ Welcome to the VPN server configuration script. What do you want to do?
 read -p "Select 1, 2 or 3: " option 
 
 if [ $option = "1" ]; then
+    echo "VPN Server installation has started"
     chmod +x install-vpnserver.sh
     ./install-vpnserver.sh
     check_status "VPN Server installation completed"
