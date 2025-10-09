@@ -79,7 +79,7 @@
         enabled: yes
         state: started
 
-    - name: Abrir portas no firewall
+    - name: Abrir portas TCP no firewall
       ufw:
         rule: allow
         port: "{{ item }}"
@@ -90,6 +90,16 @@
         - "992"
         - "1194"
 
+    - name: Abrir portas UDP no firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: udp
+      loop:
+        - "500"
+        - "1701"
+        - "4500"
+
   handlers:
     - name: Reload systemd
       systemd:
@@ -99,3 +109,4 @@
       systemd:
         name: softether-vpnserver
         state: restarted
+
